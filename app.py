@@ -51,7 +51,7 @@ def generate_blog_with_gemini(prompt: str, max_tokens: int = 800) -> str:
     if not gemini_available:
         raise RuntimeError("Gemini client not available.")
     try:
-        model = genai.GenerativeModel('models/gemini-pro')
+        model = genai.GenerativeModel('models/gemini-2.5-pro')
 
         response = model.generate_content(
             f"Write a long-form blog post about:\n\n{prompt}\n\nInclude an intro, sections with headings, and a conclusion. Make it friendly and informative.",
@@ -62,17 +62,7 @@ def generate_blog_with_gemini(prompt: str, max_tokens: int = 800) -> str:
         st.error(f"Error generating with Gemini: {ex}")
         raise
 
-    # TEMPORARY DEBUGGING CODE
-# Place this after the 'try...except' block for the Gemini client
 
-if gemini_available:
-    st.subheader("Available Gemini Models:")
-    try:
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                st.write(m.name)
-    except Exception as e:
-        st.error(f"Could not list models: {e}")
 
 def generate_blog_with_openai(prompt: str, max_tokens: int = 800) -> str:
     if not openai_available:
