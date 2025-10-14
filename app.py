@@ -51,7 +51,7 @@ def generate_blog_with_gemini(prompt: str, max_tokens: int = 800) -> str:
     if not gemini_available:
         raise RuntimeError("Gemini client not available.")
     try:
-        model = gemini_client.GenerativeModel('gemini-1.5-pro-latest')
+        model = gemini_client.GenerativeModel('gemini-1.0-pro')
         response = model.generate_content(
             f"Write a long-form blog post about:\n\n{prompt}\n\nInclude an intro, sections with headings, and a conclusion. Make it friendly and informative.",
             generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens)
