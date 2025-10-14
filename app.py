@@ -52,14 +52,31 @@ def generate_blog_with_gemini(prompt: str, max_tokens: int = 800) -> str:
         raise RuntimeError("Gemini client not available.")
     try:
         model = genai.GenerativeModel('models/gemini-2.5-pro')
-
         response = model.generate_content(
             f"Write a long-form blog post about:\n\n{prompt}\n\nInclude an intro, sections with headings, and a conclusion. Make it friendly and informative.",
             generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens)
         )
-        return response.text
+
+        # --- NEW: Robustly check the response before accessing it ---
+        if response.candidates:
+            candidate = response.candidates[0]
+            # Finish reason 1 is "STOP" which means a normal, successful generation.
+            if candidate.finish_reason == 1 and candidate.content and candidate.content.parts:
+                return candidate.content.parts[0].text
+            else:
+                # If it finished for another reason, explain why to the user.
+                finish_reason_name = candidate.finish_reason.name if hasattr(candidate.finish_reason, 'name') else str(candidate.finish_reason)
+                return (f"⚠️ **Generation stopped unexpectedly.**\n\n"
+                        f"**Reason:** {finish_reason_name}\n\n"
+                        f"This can happen if the content is blocked by safety filters or other restrictions. Please try a different topic or adjust your prompt.")
+        else:
+            # This handles cases where the response is completely empty, often due to a safety block on the prompt itself.
+            return (f"❌ **Generation failed.**\n\n"
+                    f"No content was produced. This is often due to the prompt being blocked by safety filters.\n\n"
+                    f"**Prompt Feedback:** {response.prompt_feedback}")
+
     except Exception as ex:
-        st.error(f"Error generating with Gemini: {ex}")
+        st.error(f"An unexpected error occurred with the Gemini API: {ex}")
         raise
 
 
