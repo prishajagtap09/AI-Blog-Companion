@@ -56,7 +56,7 @@ def generate_blog_with_groq(prompt: str, max_tokens: int = 800) -> str:
         data = response.json()
         return data['choices'][0]['message']['content']
     except requests.exceptions.RequestException as e:
-    error_message = f"Error calling Groq API: {e}"
+        error_message = f"Error calling Groq API: {e}"
     # Try to get more specific error details from the API response
     if e.response is not None:
         try:
