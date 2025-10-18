@@ -10,65 +10,34 @@ from dotenv import load_dotenv
 load_dotenv()
 
 st.set_page_config(page_title="AI Blogging Assistant", layout="wide")
-st.title("📝 AI Blogging Assistant — Model Finder")
+st.title("📝 AI Blogging Assistant — Free Edition (Groq + Stability AI)")
 
 # ========== Helper: Check if API Keys are available ==========
 groq_api_key = os.getenv("GROQ_API_KEY")
 stability_api_key = os.getenv("STABILITY_API_KEY")
 
-# ==============================================================================
-# TEMPORARY DEBUGGING FUNCTION TO LIST AVAILABLE MODELS
-# ==============================================================================
-def list_groq_models_and_display():
-    """
-    Calls the Groq API to get a list of available models and displays them.
-    """
-    if not groq_api_key:
-        st.error("Cannot list models because Groq API key is not set.")
-        return
+if not groq_api_key:
+    st.info("Groq API key not found. Please add it to your secrets to enable text generation.")
 
-    try:
-        response = requests.get(
-            "https://api.groq.com/openai/v1/models",
-            headers={"Authorization": f"Bearer {groq_api_key}"}
-        )
-        response.raise_for_status()
-        models_data = response.json()
-        
-        st.subheader("✅ Available Groq Models for Your API Key:")
-        st.info("Copy one of the model IDs below and paste it into the `model:` line inside the `generate_blog_with_groq` function in your `app.py` file.")
-        
-        model_ids = [model.get('id') for model in models_data.get('data', [])]
-        if model_ids:
-            st.code('\n'.join(model_ids))
-        else:
-            st.warning("No models found in the API response.")
-            st.json(models_data)
+if not stability_api_key:
+    st.warning("Stability AI API key not found. Please add it to your secrets to enable image generation.")
 
-    except requests.exceptions.RequestException as e:
-        st.error(f"Failed to fetch model list from Groq: {e}")
-        if e.response is not None:
-            st.json(e.response.json())
+# ========== Functions ==========
 
-# --- Call the function to display the models right on the page ---
-list_groq_models_and_display()
-st.markdown("---")
-# ==============================================================================
-# END OF DEBUGGING CODE
-# ==============================================================================
-
-
-# ========== Main Functions ==========
 def generate_blog_with_groq(prompt: str, max_tokens: int = 800) -> str | None:
+    """
+    Uses the Groq API to generate blog text with the correct Llama model.
+    Returns the blog text as a string, or None if it fails.
+    """
     if not groq_api_key:
         raise RuntimeError("GROQ_API_KEY not found in secrets.")
-    
+
     full_prompt = (
         f"You are an expert blogger. Write a long-form, engaging, and informative blog post about: '{prompt}'. "
         "The blog post should have a clear introduction, several sections with descriptive headings, and a concluding summary. "
         "Ensure the tone is friendly and accessible to a general audience."
     )
-    
+
     try:
         response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -77,8 +46,8 @@ def generate_blog_with_groq(prompt: str, max_tokens: int = 800) -> str | None:
                 "Content-Type": "application/json"
             },
             json={
-                # --- THIS IS THE LINE YOU WILL UPDATE AFTER SEEING THE LIST ---
-                "model": "llama3.1-70b-versatile", # <-- Paste the correct model name here
+                # --- THIS IS THE CORRECT, WORKING MODEL NAME FROM YOUR LIST ---
+                "model": "llama-3.3-70b-versatile",
                 "messages": [{"role": "user", "content": full_prompt}],
                 "max_tokens": max_tokens,
                 "temperature": 0.7,
@@ -101,18 +70,24 @@ def generate_blog_with_groq(prompt: str, max_tokens: int = 800) -> str | None:
         return None
 
 def generate_image_with_stability(prompt: str, n: int = 1):
-    # This function remains unchanged
     if not stability_api_key:
         raise RuntimeError("STABILITY_API_KEY not found in secrets.")
+    
     images = []
-    # ... (rest of the function is the same)
     for _ in range(n):
         try:
             response = requests.post(
                 "https://api.stability.ai/v2beta/stable-image/generate/core",
-                headers={"authorization": f"Bearer {stability_api_key}", "accept": "image/*"},
+                headers={
+                    "authorization": f"Bearer {stability_api_key}",
+                    "accept": "image/*"
+                },
                 files={"none": ''},
-                data={"prompt": prompt, "output_format": "png", "aspect_ratio": "16:9"},
+                data={
+                    "prompt": prompt,
+                    "output_format": "png",
+                    "aspect_ratio": "16:9"
+                },
             )
             response.raise_for_status()
             img = Image.open(BytesIO(response.content))
@@ -125,8 +100,7 @@ def generate_image_with_stability(prompt: str, n: int = 1):
             continue
     return images
 
-# ========== Streamlit UI (remains the same) ==========
-# ... (The rest of your UI code is unchanged)
+# ========== Streamlit UI ==========
 with st.sidebar:
     st.header("Settings")
     st.markdown("This app uses free-tier APIs from Groq (for text) and Stability AI (for images).")
