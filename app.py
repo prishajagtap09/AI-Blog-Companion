@@ -1,162 +1,136 @@
 # app.py
 import os
 import streamlit as st
-from io import BytesIO
-from PIL import Image
 import requests
-import base64
+from PIL import Image
+from io import BytesIO
 from dotenv import load_dotenv
 
-
+# --- Load environment variables from .env file ---
+# This allows you to run the app locally
 load_dotenv()
 
-st.set_page_config(page_title="AI Blog Assistant", layout="wide")
-st.title("📝INKWELL:Your AI Blogging Assistant")
+st.set_page_config(page_title="AI Blogging Assistant", layout="wide")
+st.title("📝 AI Blogging Assistant — Free Edition (Groq + Stability AI)")
 
-#  Helper: Try to import Google GenAI (Gemini) client 
-gemini_available = False
-gemini_client = None
-try:
-    import google.generativeai as genai
-    # --- FIX: Use os.getenv() to get the key ---
-    google_api_key = os.getenv("GOOGLE_API_KEY")
-    if google_api_key:
-        genai.configure(api_key=google_api_key)
-        gemini_available = True
-        gemini_client = genai
-    else:
-        st.info("Gemini API key not found. The app will fall back to OpenAI text model.")
-        
-except ImportError:
-    st.info("Gemini client not found (pip install google-generativeai). The app will fall back to OpenAI text model.")
+# ========== Helper: Check if API Keys are available ==========
+groq_api_key = os.getenv("GROQ_API_KEY")
+stability_api_key = os.getenv("STABILITY_API_KEY")
 
-# Helper: OpenAI client for images & fallback
-openai_available = False
-try:
-    import openai
-    # --- FIX: Use os.getenv() to get the key ---
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if openai_api_key:
-        openai.api_key = openai_api_key
-        openai_available = True
-    else:
-        st.warning("OPENAI_API_KEY not set. Image generation will not work without it.")
+if not groq_api_key:
+    st.info("Groq API key not found. Please add it to your secrets to enable text generation.")
 
-except ImportError:
-    st.warning("OpenAI client not installed (pip install openai). Image generation will not work without it.")
+if not stability_api_key:
+    st.warning("Stability AI API key not found. Please add it to your secrets to enable image generation.")
 
+# ========== Functions ==========
 
-#  Functions 
-def generate_blog_with_gemini(prompt: str, max_tokens: int = 800) -> str:
-    if not gemini_available:
-        raise RuntimeError("Gemini client not available.")
+def generate_blog_with_groq(prompt: str, max_tokens: int = 800) -> str:
+    """
+    Uses the Groq API to generate blog text with the Llama 3 model.
+    """
+    if not groq_api_key:
+        raise RuntimeError("GROQ_API_KEY not found in secrets.")
+
+    full_prompt = (
+        f"You are an expert blogger. Write a long-form, engaging, and informative blog post about: '{prompt}'. "
+        "The blog post should have a clear introduction, several sections with descriptive headings, and a concluding summary. "
+        "Ensure the tone is friendly and accessible to a general audience."
+    )
+
     try:
-        model = genai.GenerativeModel('models/gemini-2.5-pro')
-        response = model.generate_content(
-            f"Write a long-form blog post about:\n\n{prompt}\n\nInclude an intro, sections with headings, and a conclusion. Make it friendly and informative.",
-            generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens)
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {groq_api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "llama3-8b-8192", # A fast and capable model
+                "messages": [{"role": "user", "content": full_prompt}],
+                "max_tokens": max_tokens,
+                "temperature": 0.7,
+            }
         )
-
-        # --- NEW: Robustly check the response before accessing it ---
-        if response.candidates:
-            candidate = response.candidates[0]
-            # Finish reason 1 is "STOP" which means a normal, successful generation.
-            if candidate.finish_reason == 1 and candidate.content and candidate.content.parts:
-                return candidate.content.parts[0].text
-            else:
-                # If it finished for another reason, explain why to the user.
-                finish_reason_name = candidate.finish_reason.name if hasattr(candidate.finish_reason, 'name') else str(candidate.finish_reason)
-                return (f"⚠️ **Generation stopped unexpectedly.**\n\n"
-                        f"**Reason:** {finish_reason_name}\n\n"
-                        f"This can happen if the content is blocked by safety filters or other restrictions. Please try a different topic or adjust your prompt.")
-        else:
-            # This handles cases where the response is completely empty, often due to a safety block on the prompt itself.
-            return (f"❌ **Generation failed.**\n\n"
-                    f"No content was produced. This is often due to the prompt being blocked by safety filters.\n\n"
-                    f"**Prompt Feedback:** {response.prompt_feedback}")
-
-    except Exception as ex:
-        st.error(f"An unexpected error occurred with the Gemini API: {ex}")
+        response.raise_for_status() # Raise an exception for bad status codes
+        data = response.json()
+        return data['choices'][0]['message']['content']
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error calling Groq API: {e}")
         raise
 
-
-
-def generate_blog_with_openai(prompt: str, max_tokens: int = 800) -> str:
-    if not openai_available:
-        raise RuntimeError("OpenAI client not available.")
-    completion_prompt = (
-        f"Write a long-form blog post about:\n\n{prompt}\n\n"
-        "Include an intro, sections with headings, bullet points where useful, and a short conclusion.\n"
-        "Make it friendly, readable, and helpful."
-    )
-   
-    resp = openai.Completion.create(
-        engine="text-davinci-003", 
-        prompt=completion_prompt,
-        max_tokens=max_tokens,
-        temperature=0.7,
-        n=1,
-        top_p=1
-    )
-    return resp.choices[0].text.strip()
-
-def generate_image_openai(prompt: str, n: int = 1, size: str = "1024x1024"):
-    if not openai_available:
-        raise RuntimeError("OpenAI client not available.")
+def generate_image_with_stability(prompt: str, n: int = 1):
+    """
+    Uses Stability AI (Stable Diffusion) to generate image(s). Returns a list of PIL Images.
+    """
+    if not stability_api_key:
+        raise RuntimeError("STABILITY_API_KEY not found in secrets.")
+    
     images = []
-    try:
-        
-        result = openai.Image.create(prompt=prompt, n=n, size=size, response_format="b64_json")
-        for item in result['data']:
-            img_data = base64.b64decode(item["b64_json"])
-            img = Image.open(BytesIO(img_data))
+    for _ in range(n): # Loop to generate the requested number of images
+        try:
+            response = requests.post(
+                "https://api.stability.ai/v2beta/stable-image/generate/core",
+                headers={
+                    "authorization": f"Bearer {stability_api_key}",
+                    "accept": "image/*"
+                },
+                files={"none": ''},
+                data={
+                    "prompt": prompt,
+                    "output_format": "png",
+                    "aspect_ratio": "16:9" # Good for blog headers
+                },
+            )
+            response.raise_for_status()
+            img = Image.open(BytesIO(response.content))
             images.append(img)
-        return images
-    except Exception as e:
-        st.error(f"Image generation error: {e}")
-        return []
+        except requests.exceptions.RequestException as e:
+            st.error(f"Error calling Stability AI API: {e}")
+            # Try to get more specific error from Stability AI response
+            if e.response is not None:
+                st.error(f"Stability AI Response: {e.response.text}")
+            continue # Continue to the next image if one fails
+    return images
 
-#  Streamlit UI 
+# ========== Streamlit UI ==========
 with st.sidebar:
     st.header("Settings")
-    model_choice = st.selectbox("Content model", options=["Gemini (if available)", "OpenAI (fallback)"])
-    max_tokens = st.slider("Max tokens for blog", 200, 2000, 800, step=50)
-    num_images = st.number_input("Number of images", min_value=0, max_value=4, value=1)
-    image_style = st.text_input("Image prompt style (optional)", value="clean modern illustration")
+    st.markdown("This app uses free-tier APIs from Groq (for text) and Stability AI (for images).")
+    max_tokens = st.slider("Max tokens for blog", 200, 4000, 1000, step=100)
+    num_images = st.number_input("Number of images", min_value=0, max_value=2, value=1)
+    image_style = st.text_input("Image prompt style (optional)", value="digital art, cinematic lighting")
 
 st.markdown("### Input")
-topic = st.text_input("Blog topic / angle", placeholder="e.g., 'How AI will change personal finance in 2025'")
-prompt_template = st.text_area("Extra prompt instructions (optional)", height=120, value="Target audience: beginners. Tone: friendly. Include examples and 3 headings.")
+topic = st.text_input("Blog topic / angle", placeholder="e.g., 'The Future of Renewable Energy'")
+prompt_template = st.text_area("Extra prompt instructions (optional)", height=120, value="Target audience: general public. Tone: optimistic and informative.")
 
 if st.button("Generate blog + images"):
     if not topic.strip():
         st.warning("Please enter a blog topic.")
+    elif not groq_api_key or not stability_api_key:
+        st.error("Please make sure you have added both API keys to your Streamlit secrets.")
     else:
         user_prompt = f"{topic}\n\n{prompt_template}"
         blog_text = None
-        with st.spinner("Generating blog..."):
+        with st.spinner("Generating blog post with Groq..."):
             try:
-                if model_choice.startswith("Gemini") and gemini_available:
-                    blog_text = generate_blog_with_gemini(user_prompt, max_tokens=max_tokens)
-                elif openai_available:
-                    blog_text = generate_blog_with_openai(user_prompt, max_tokens=max_tokens)
-                else:
-                    st.error("No content generation models are available. Please check your API keys and installations.")
+                blog_text = generate_blog_with_groq(user_prompt, max_tokens=max_tokens)
             except Exception as e:
-                st.error(f"Content generation failed: {e}")
+                st.error(f"Content generation failed.")
 
         if blog_text:
-            st.subheader("Generated Blog")
+            st.subheader("Generated Blog Post")
             st.markdown(blog_text)
             st.download_button("Download blog as .txt", blog_text, file_name="generated_blog.txt", mime="text/plain")
 
             if num_images > 0:
-                img_prompt = f"{topic}. {image_style} -- high quality, suitable as a blog header image."
-                with st.spinner("Generating image(s)..."):
-                    images = generate_image_openai(img_prompt, n=num_images)
+                img_prompt = f"{topic}. {image_style}"
+                with st.spinner(f"Generating {num_images} image(s) with Stability AI..."):
+                    images = generate_image_with_stability(img_prompt, n=num_images)
                     if images:
                         st.subheader("Generated Image(s)")
-                        cols = st.columns(min(3, len(images)))
+                        cols = st.columns(min(2, len(images)))
                         for i, img in enumerate(images):
                             with cols[i % len(cols)]:
                                 st.image(img, use_column_width=True)
