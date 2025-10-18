@@ -46,7 +46,7 @@ def generate_blog_with_groq(prompt: str, max_tokens: int = 800) -> str | None:
                 "Content-Type": "application/json"
             },
             json={
-                "model": "llama3-8b-8192",
+                "model": "llama3-70b-8192",
                 "messages": [{"role": "user", "content": full_prompt}],
                 "max_tokens": max_tokens,
                 "temperature": 0.7,
