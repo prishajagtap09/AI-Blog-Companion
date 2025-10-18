@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 st.set_page_config(page_title="AI Blogging Assistant", layout="wide")
-st.title("📝 AI Blogging Assistant — Free Edition (Groq + Stability AI)")
+st.title("📝 INKWELL:YOUR AI Blogging Assistant — (Groq + Stability AI)")
 
 # ========== Helper: Check if API Keys are available ==========
 groq_api_key = os.getenv("GROQ_API_KEY")
