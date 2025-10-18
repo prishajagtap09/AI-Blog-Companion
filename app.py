@@ -7,11 +7,10 @@ from io import BytesIO
 from dotenv import load_dotenv
 
 # --- Load environment variables from .env file ---
-# This allows you to run the app locally
 load_dotenv()
 
 st.set_page_config(page_title="AI Blogging Assistant", layout="wide")
-st.title("📝 AI Blogging Assistant — Free Edition (Groq + Stability AI)")
+st.title("📝 v1.1 AI Blogging Assistant — Free Edition (Groq + Stability AI)")
 
 # ========== Helper: Check if API Keys are available ==========
 groq_api_key = os.getenv("GROQ_API_KEY")
@@ -25,9 +24,10 @@ if not stability_api_key:
 
 # ========== Functions ==========
 
-def generate_blog_with_groq(prompt: str, max_tokens: int = 800) -> str:
+def generate_blog_with_groq(prompt: str, max_tokens: int = 800) -> str | None:
     """
     Uses the Groq API to generate blog text with the Llama 3 model.
+    Returns the blog text as a string, or None if it fails.
     """
     if not groq_api_key:
         raise RuntimeError("GROQ_API_KEY not found in secrets.")
@@ -46,36 +46,35 @@ def generate_blog_with_groq(prompt: str, max_tokens: int = 800) -> str:
                 "Content-Type": "application/json"
             },
             json={
-                "model": "llama3-8b-8192", # A fast and capable model
+                "model": "llama3-8b-8192",
                 "messages": [{"role": "user", "content": full_prompt}],
                 "max_tokens": max_tokens,
                 "temperature": 0.7,
             }
         )
-        response.raise_for_status() # Raise an exception for bad status codes
+        response.raise_for_status()
         data = response.json()
         return data['choices'][0]['message']['content']
     except requests.exceptions.RequestException as e:
         error_message = f"Error calling Groq API: {e}"
-    # Try to get more specific error details from the API response
-    if e.response is not None:
-        try:
-            error_details = e.response.json()
-            error_message += f"\n\n**API Response:**\n```\n{error_details}\n```"
-        except ValueError:
-            error_message += f"\n\n**API Response:**\n```\n{e.response.text}\n```"
-    st.error(error_message)
-    raise
+        if e.response is not None:
+            try:
+                error_details = e.response.json()
+                with st.expander("Click to see API Error Details"):
+                    st.json(error_details)
+            except ValueError:
+                 with st.expander("Click to see API Error Details"):
+                    st.text(e.response.text)
+        st.error(error_message)
+        # --- THIS IS THE ONLY LINE THAT CHANGED ---
+        return None # Return None instead of raising the error
 
 def generate_image_with_stability(prompt: str, n: int = 1):
-    """
-    Uses Stability AI (Stable Diffusion) to generate image(s). Returns a list of PIL Images.
-    """
     if not stability_api_key:
         raise RuntimeError("STABILITY_API_KEY not found in secrets.")
     
     images = []
-    for _ in range(n): # Loop to generate the requested number of images
+    for _ in range(n):
         try:
             response = requests.post(
                 "https://api.stability.ai/v2beta/stable-image/generate/core",
@@ -87,7 +86,7 @@ def generate_image_with_stability(prompt: str, n: int = 1):
                 data={
                     "prompt": prompt,
                     "output_format": "png",
-                    "aspect_ratio": "16:9" # Good for blog headers
+                    "aspect_ratio": "16:9"
                 },
             )
             response.raise_for_status()
@@ -95,10 +94,10 @@ def generate_image_with_stability(prompt: str, n: int = 1):
             images.append(img)
         except requests.exceptions.RequestException as e:
             st.error(f"Error calling Stability AI API: {e}")
-            # Try to get more specific error from Stability AI response
             if e.response is not None:
-                st.error(f"Stability AI Response: {e.response.text}")
-            continue # Continue to the next image if one fails
+                 with st.expander("Click to see API Error Details"):
+                    st.text(e.response.text)
+            continue
     return images
 
 # ========== Streamlit UI ==========
@@ -122,10 +121,7 @@ if st.button("Generate blog + images"):
         user_prompt = f"{topic}\n\n{prompt_template}"
         blog_text = None
         with st.spinner("Generating blog post with Groq..."):
-            try:
-                blog_text = generate_blog_with_groq(user_prompt, max_tokens=max_tokens)
-            except Exception as e:
-                st.error(f"Content generation failed.")
+            blog_text = generate_blog_with_groq(user_prompt, max_tokens=max_tokens)
 
         if blog_text:
             st.subheader("Generated Blog Post")
@@ -146,3 +142,7 @@ if st.button("Generate blog + images"):
                                 img.save(buf, format="PNG")
                                 byte_im = buf.getvalue()
                                 st.download_button(f"Download image {i+1}", data=byte_im, file_name=f"image_{i+1}.png", mime="image/png")
+        else:
+            # This will now only show if the function returns None (i.e., an error occurred)
+            st.error("Content generation failed. Check the error details above.")
+
