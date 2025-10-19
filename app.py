@@ -16,12 +16,6 @@ st.title("📝 INKWELL:YOUR AI Blogging Assistant — (Groq + Stability AI)")
 groq_api_key = os.getenv("GROQ_API_KEY")
 stability_api_key = os.getenv("STABILITY_API_KEY")
 
-if not groq_api_key:
-    st.info("Groq API key not found. Please add it to your secrets to enable text generation.")
-
-if not stability_api_key:
-    st.warning("Stability AI API key not found. Please add it to your secrets to enable image generation.")
-
 # ========== Functions ==========
 
 def generate_blog_with_groq(prompt: str, max_tokens: int = 800) -> str | None:
